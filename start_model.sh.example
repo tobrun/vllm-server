@@ -7,7 +7,8 @@
 source /opt/vllm-env/bin/activate
 
 # Start vLLM with model-specific parameters
-vllm serve YourOrg/YourModel-Name \
+# Use the full local path to the model directory
+vllm serve /path/to/models/YourModel-Name \
   --tensor-parallel-size 4 \
   --max-model-len 32768 \
   --trust-remote-code
