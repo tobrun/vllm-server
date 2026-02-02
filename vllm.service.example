@@ -1,0 +1,19 @@
+# Example vLLM systemd unit file that reads the model script from environment file
+# This replaces the existing vllm.service if you want model switching support
+#
+# Install with:
+#   sudo cp vllm.service.example /etc/systemd/system/vllm.service
+#   sudo systemctl daemon-reload
+
+[Unit]
+Description=vLLM Inference Server
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/vllm-manager/vllm.env
+ExecStart=/bin/bash ${MODEL_SCRIPT}
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

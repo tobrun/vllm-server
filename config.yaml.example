@@ -1,0 +1,12 @@
+# Copy this file to config.yaml and customize for your setup
+# Each model needs a start script in ~/ws/models/ that activates the venv and runs vllm serve
+
+models:
+  minimax-m2:
+    script: /home/nurbot/ws/models/start_minimax_m2.sh
+
+  glm45-air:
+    script: /home/nurbot/ws/models/start_glm45_air.sh
+
+  qwen3-coder:
+    script: /home/nurbot/ws/models/start_qwen3_coder.sh

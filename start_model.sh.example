@@ -1,0 +1,13 @@
+#!/bin/bash
+# Example start script for a vLLM model
+# Copy this to your models directory and customize for each model
+# e.g., ~/ws/models/start_qwen3_coder.sh
+
+# Activate the vLLM virtual environment
+source /opt/vllm-env/bin/activate
+
+# Start vLLM with model-specific parameters
+vllm serve YourOrg/YourModel-Name \
+  --tensor-parallel-size 4 \
+  --max-model-len 32768 \
+  --trust-remote-code

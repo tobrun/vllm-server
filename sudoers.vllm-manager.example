@@ -1,0 +1,10 @@
+# Sudoers rules for vLLM Manager
+# Replace YOUR_USER with the user running vllm-manager
+# Install with: sudo cp sudoers.vllm-manager /etc/sudoers.d/vllm-manager && sudo chmod 440 /etc/sudoers.d/vllm-manager
+
+YOUR_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start vllm.service
+YOUR_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop vllm.service
+YOUR_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart vllm.service
+YOUR_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
+YOUR_USER ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/vllm-manager/vllm.env
+YOUR_USER ALL=(ALL) NOPASSWD: /sbin/shutdown

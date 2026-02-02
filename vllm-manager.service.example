@@ -1,0 +1,15 @@
+[Unit]
+Description=vLLM Management Backend
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+Group=YOUR_USER
+WorkingDirectory=/path/to/vllm-server
+ExecStart=/path/to/vllm-server/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 9090
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
