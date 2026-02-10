@@ -93,6 +93,10 @@ curl -X POST http://server:9090/switch \
 curl -X POST http://server:9090/shutdown
 ```
 
+## Android App
+
+A native Android companion app for monitoring and controlling the server from your phone. See [`android/readme.md`](android/readme.md) for details.
+
 ## License
 
 MIT
