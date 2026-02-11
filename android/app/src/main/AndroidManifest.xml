@@ -6,7 +6,9 @@
     <application
         android:name=".VllmRemoteApp"
         android:label="vLLM Remote"
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        android:theme="@style/Theme.VllmRemote"
+        android:usesCleartextTraffic="true">
 
         <activity
             android:name=".MainActivity"

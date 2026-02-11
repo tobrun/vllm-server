@@ -1,7 +1,7 @@
 package com.nurbot.vllmremote.domain.model
 
 data class GpuStats(
-    val utilizationPercent: Int,
+    val fanSpeedPercent: Int,
     val memoryUsedMb: Int,
     val memoryTotalMb: Int,
     val temperatureC: Int,

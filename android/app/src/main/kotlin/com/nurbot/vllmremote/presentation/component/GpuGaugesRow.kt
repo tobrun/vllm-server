@@ -43,9 +43,9 @@ fun GpuGaugesRow(gpu: GpuStats) {
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
             GaugeRing(
-                value = gpu.utilizationPercent.toFloat(),
+                value = gpu.fanSpeedPercent.toFloat(),
                 maxValue = 100f,
-                label = "GPU",
+                label = "Fan",
                 unit = "%",
                 color = SeverityGreen,
             )

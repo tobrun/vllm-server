@@ -110,7 +110,7 @@ def get_gpu_stats() -> Optional[dict]:
         result = subprocess.run(
             [
                 "nvidia-smi",
-                "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu",
+                "--query-gpu=fan.speed,memory.used,memory.total,temperature.gpu",
                 "--format=csv,noheader,nounits",
             ],
             capture_output=True,
@@ -125,7 +125,7 @@ def get_gpu_stats() -> Optional[dict]:
             return None
 
         # Sum across all GPUs
-        total_util = 0
+        max_fan = 0
         total_mem_used = 0
         total_mem_total = 0
         max_temp = 0
@@ -134,7 +134,7 @@ def get_gpu_stats() -> Optional[dict]:
         for line in lines:
             parts = [p.strip() for p in line.split(",")]
             if len(parts) >= 4:
-                total_util += int(parts[0])
+                max_fan = max(max_fan, int(parts[0]))
                 total_mem_used += int(parts[1])
                 total_mem_total += int(parts[2])
                 max_temp = max(max_temp, int(parts[3]))
@@ -144,7 +144,7 @@ def get_gpu_stats() -> Optional[dict]:
             return None
 
         return {
-            "utilization_percent": total_util // gpu_count,
+            "fan_speed_percent": max_fan,
             "memory_used_mb": total_mem_used,
             "memory_total_mb": total_mem_total,
             "temperature_c": max_temp,
@@ -162,6 +162,45 @@ def validate_model_files(script_path: str) -> tuple[bool, Optional[str]]:
     if not script.is_file():
         return False, f"Script is not a file: {script_path}"
     return True, None
+
+
+async def detect_running_model() -> Optional[str]:
+    """Query vLLM's OpenAI-compatible API to discover the currently loaded model."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "curl", "-s", VLLM_HEALTH_URL.replace("/health", "/v1/models"),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        if proc.returncode != 0:
+            return None
+        data = json.loads(stdout.decode())
+        models = data.get("data", [])
+        if models:
+            return models[0].get("id")
+    except Exception as e:
+        logger.warning(f"Failed to detect running model from vLLM: {e}")
+    return None
+
+
+async def match_vllm_model_to_config(vllm_model_id: str) -> Optional[str]:
+    """Try to match a vLLM model ID to a config model ID."""
+    try:
+        config = load_config()
+        models = config.get("models", {})
+        # Check if any config model ID is a substring of the vLLM model path
+        for model_id in models:
+            if model_id in vllm_model_id.lower().replace("-", "").replace("_", ""):
+                return model_id
+        # Also try matching by checking script contents for the vLLM model path
+        vllm_model_name = vllm_model_id.split("/")[-1].lower()
+        for model_id in models:
+            if model_id.replace("-", "") in vllm_model_name.replace("-", "").replace("_", "").lower():
+                return model_id
+    except Exception as e:
+        logger.warning(f"Failed to match vLLM model to config: {e}")
+    return None
 
 
 async def check_vllm_health() -> bool:
@@ -234,7 +273,26 @@ async def startup_event():
     if systemd_state == "active":
         state = load_state()
         model_id = state.get("last_model")
-        await app_state.set_state("running", model=model_id)
+
+        # If state.json doesn't know the model, ask vLLM directly
+        if not model_id:
+            vllm_model = await detect_running_model()
+            if vllm_model:
+                logger.info(f"Detected running vLLM model: {vllm_model}")
+                model_id = await match_vllm_model_to_config(vllm_model)
+                if model_id:
+                    logger.info(f"Matched to config model: {model_id}")
+                    save_state({"last_model": model_id})
+                else:
+                    # Use vLLM's model ID directly as a fallback
+                    model_id = vllm_model.split("/")[-1]
+                    logger.info(f"No config match, using vLLM model name: {model_id}")
+
+        if model_id:
+            await app_state.set_state("running", model=model_id)
+        else:
+            # Force set current_model even if None, so state is "running"
+            app_state.state = "running"
         logger.info(f"vLLM already running with model: {model_id}")
         return
 

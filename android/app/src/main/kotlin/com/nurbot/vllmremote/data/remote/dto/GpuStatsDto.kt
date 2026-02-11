@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class GpuStatsDto(
-    @SerialName("utilization_percent") val utilizationPercent: Int,
+    @SerialName("fan_speed_percent") val fanSpeedPercent: Int,
     @SerialName("memory_used_mb") val memoryUsedMb: Int,
     @SerialName("memory_total_mb") val memoryTotalMb: Int,
     @SerialName("temperature_c") val temperatureC: Int,
@@ -14,7 +14,7 @@ data class GpuStatsDto(
 )
 
 fun GpuStatsDto.toDomain() = GpuStats(
-    utilizationPercent = utilizationPercent,
+    fanSpeedPercent = fanSpeedPercent,
     memoryUsedMb = memoryUsedMb,
     memoryTotalMb = memoryTotalMb,
     temperatureC = temperatureC,
