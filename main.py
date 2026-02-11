@@ -8,6 +8,7 @@ from typing import Optional
 
 import yaml
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 logging.basicConfig(
@@ -50,6 +51,12 @@ class AppState:
 
 app_state = AppState()
 app = FastAPI(title="vLLM Manager", version="1.0.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def load_config() -> dict:
