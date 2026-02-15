@@ -67,7 +67,8 @@ The service runs on port 9090.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/status` | GET | Current state, loaded model, GPU stats |
+| `/status` | GET | Current state, loaded model, GPU stats, and runtime diagnostics |
+| `/service/status` | GET | Latest `systemctl` + `journalctl` output for `vllm.service` |
 | `/models` | GET | List all configured models |
 | `/start` | POST | Start vLLM with last-used model |
 | `/stop` | POST | Stop vLLM service |
@@ -84,6 +85,9 @@ curl http://server:9090/status
 # List models
 curl http://server:9090/models
 
+# View latest service output
+curl "http://server:9090/service/status?lines=120"
+
 # Switch model
 curl -X POST http://server:9090/switch \
   -H "Content-Type: application/json" \
@@ -92,6 +96,11 @@ curl -X POST http://server:9090/switch \
 # Shutdown server
 curl -X POST http://server:9090/shutdown
 ```
+
+`/status` now includes a `checks` object with:
+- `systemd` active/sub state and exit info for `vllm.service`
+- vLLM `/health` reachability and HTTP code
+- `inferred_state` used to reconcile stale manager state
 
 ## Android App
 

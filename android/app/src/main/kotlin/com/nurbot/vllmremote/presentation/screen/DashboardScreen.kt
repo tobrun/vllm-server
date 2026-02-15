@@ -34,6 +34,7 @@ import com.nurbot.vllmremote.presentation.component.GpuGaugesRow
 import com.nurbot.vllmremote.presentation.component.ModelList
 import com.nurbot.vllmremote.presentation.component.ServerUrlPrompt
 import com.nurbot.vllmremote.presentation.component.ServiceControls
+import com.nurbot.vllmremote.presentation.component.ServiceStatusDialog
 import com.nurbot.vllmremote.presentation.component.ShutdownSection
 import com.nurbot.vllmremote.presentation.component.StatusSection
 import com.nurbot.vllmremote.presentation.component.UnreachableBanner
@@ -45,6 +46,7 @@ fun DashboardScreen(viewModel: DashboardViewModel = koinViewModel()) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var showUrlEdit by remember { mutableStateOf(false) }
+    var showServiceStatus by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         viewModel.startPolling()
@@ -121,6 +123,10 @@ fun DashboardScreen(viewModel: DashboardViewModel = koinViewModel()) {
                     onStart = viewModel::onStart,
                     onStop = viewModel::onStop,
                     onRestart = viewModel::onRestart,
+                    onShowServiceStatus = {
+                        showServiceStatus = true
+                        viewModel.onRefreshServiceStatus()
+                    },
                 )
 
                 ShutdownSection(onShutdown = viewModel::onShutdown)
@@ -128,5 +134,14 @@ fun DashboardScreen(viewModel: DashboardViewModel = koinViewModel()) {
                 Spacer(modifier = Modifier.height(16.dp))
             }
         }
+    }
+
+    if (showServiceStatus) {
+        ServiceStatusDialog(
+            status = uiState.serviceStatus,
+            isLoading = uiState.isServiceStatusLoading,
+            onDismiss = { showServiceStatus = false },
+            onRefresh = { lines -> viewModel.onRefreshServiceStatus(lines) },
+        )
     }
 }

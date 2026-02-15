@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { useServer } from "@/hooks/use-server";
 import { ServerUrlPrompt } from "@/components/server-url-prompt";
 import { StatusSection } from "@/components/status-section";
 import { GpuGauges } from "@/components/gpu-gauges";
 import { ModelList } from "@/components/model-list";
 import { ServiceControls } from "@/components/service-controls";
+import { ServiceStatusDialog } from "@/components/service-status-dialog";
 import { ShutdownSection } from "@/components/shutdown-section";
 import { UnreachableBanner } from "@/components/unreachable-banner";
 import { SettingsDialog } from "@/components/settings-dialog";
@@ -22,12 +24,16 @@ export default function Dashboard() {
     lastError,
     clearError,
     modelUsage,
+    serviceStatus,
+    serviceStatusLoading,
     start,
     stop,
     restart,
     switchModel,
     shutdown,
+    loadServiceStatus,
   } = useServer();
+  const [showServiceStatus, setShowServiceStatus] = useState(false);
 
   if (!serverUrl) {
     return <ServerUrlPrompt onSubmit={setServerUrl} />;
@@ -80,6 +86,10 @@ export default function Dashboard() {
               onStart={start}
               onStop={stop}
               onRestart={restart}
+              onServiceStatus={() => {
+                setShowServiceStatus(true);
+                void loadServiceStatus(120);
+              }}
             />
 
             {/* Shutdown */}
@@ -97,6 +107,14 @@ export default function Dashboard() {
         {/* Unreachable */}
         {!isReachable && <UnreachableBanner />}
       </main>
+
+      <ServiceStatusDialog
+        open={showServiceStatus}
+        status={serviceStatus}
+        isLoading={serviceStatusLoading}
+        onOpenChange={setShowServiceStatus}
+        onRefresh={(lines) => void loadServiceStatus(lines)}
+      />
     </div>
   );
 }

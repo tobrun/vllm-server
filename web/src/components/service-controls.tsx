@@ -10,53 +10,66 @@ interface ServiceControlsProps {
   onStart: () => void;
   onStop: () => void;
   onRestart: () => void;
+  onServiceStatus: () => void;
 }
 
-export function ServiceControls({ state, isLoading, onStart, onStop, onRestart }: ServiceControlsProps) {
+export function ServiceControls({
+  state,
+  isLoading,
+  onStart,
+  onStop,
+  onRestart,
+  onServiceStatus,
+}: ServiceControlsProps) {
   const isRunning = state === "running";
   const isStopped = state === "stopped" || state === "error";
   const isBusy = state === "starting" || state === "stopping" || state === "shutting_down";
 
   return (
-    <div className="flex gap-3">
-      {isStopped && (
-        <Button
-          onClick={onStart}
-          disabled={isLoading || isBusy}
-          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-        >
-          <Play className="h-4 w-4 mr-2" />
-          Start
-        </Button>
-      )}
-      {isRunning && (
-        <>
+    <div className="space-y-3">
+      <div className="flex gap-3">
+        {isStopped && (
           <Button
-            onClick={onStop}
+            onClick={onStart}
             disabled={isLoading || isBusy}
-            variant="secondary"
-            className="flex-1"
+            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
           >
-            <Square className="h-4 w-4 mr-2" />
-            Stop
+            <Play className="h-4 w-4 mr-2" />
+            Start
           </Button>
-          <Button
-            onClick={onRestart}
-            disabled={isLoading || isBusy}
-            variant="secondary"
-            className="flex-1"
-          >
-            <RotateCcw className="h-4 w-4 mr-2" />
-            Restart
+        )}
+        {isRunning && (
+          <>
+            <Button
+              onClick={onStop}
+              disabled={isLoading || isBusy}
+              variant="secondary"
+              className="flex-1"
+            >
+              <Square className="h-4 w-4 mr-2" />
+              Stop
+            </Button>
+            <Button
+              onClick={onRestart}
+              disabled={isLoading || isBusy}
+              variant="secondary"
+              className="flex-1"
+            >
+              <RotateCcw className="h-4 w-4 mr-2" />
+              Restart
+            </Button>
+          </>
+        )}
+        {isBusy && (
+          <Button disabled className="flex-1" variant="secondary">
+            <div className="h-4 w-4 mr-2 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            Working...
           </Button>
-        </>
-      )}
-      {isBusy && (
-        <Button disabled className="flex-1" variant="secondary">
-          <div className="h-4 w-4 mr-2 animate-spin rounded-full border-2 border-current border-t-transparent" />
-          Working...
-        </Button>
-      )}
+        )}
+      </div>
+      <Button onClick={onServiceStatus} variant="outline" className="w-full" disabled={isLoading}>
+        Service Status
+      </Button>
     </div>
   );
 }

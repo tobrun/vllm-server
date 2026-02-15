@@ -9,6 +9,7 @@ val presentationModule = module {
         DashboardViewModel(
             getStatus = get(),
             getModels = get(),
+            getServiceStatus = get(),
             startService = get(),
             stopService = get(),
             restartService = get(),

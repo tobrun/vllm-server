@@ -1,4 +1,4 @@
-import { ServerStatus, ModelsResponse } from "./types";
+import { ServerStatus, ModelsResponse, ServiceStatusResponse } from "./types";
 
 async function request<T>(baseUrl: string, path: string, method = "GET", body?: unknown): Promise<T> {
   const url = `${baseUrl.replace(/\/+$/, "")}${path}`;
@@ -17,6 +17,8 @@ async function request<T>(baseUrl: string, path: string, method = "GET", body?: 
 export const api = {
   getStatus: (baseUrl: string) => request<ServerStatus>(baseUrl, "/status"),
   getModels: (baseUrl: string) => request<ModelsResponse>(baseUrl, "/models"),
+  getServiceStatus: (baseUrl: string, lines = 120) =>
+    request<ServiceStatusResponse>(baseUrl, `/service/status?lines=${lines}`),
   start: (baseUrl: string) => request<unknown>(baseUrl, "/start", "POST"),
   stop: (baseUrl: string) => request<unknown>(baseUrl, "/stop", "POST"),
   restart: (baseUrl: string) => request<unknown>(baseUrl, "/restart", "POST"),

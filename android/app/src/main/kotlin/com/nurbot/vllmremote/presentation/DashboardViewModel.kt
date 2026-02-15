@@ -7,6 +7,7 @@ import com.nurbot.vllmremote.domain.model.ServerState
 import com.nurbot.vllmremote.domain.usecase.GetModelUsageStatsUseCase
 import com.nurbot.vllmremote.domain.usecase.GetModelsUseCase
 import com.nurbot.vllmremote.domain.usecase.GetServerUrlUseCase
+import com.nurbot.vllmremote.domain.usecase.GetServiceStatusUseCase
 import com.nurbot.vllmremote.domain.usecase.GetStatusUseCase
 import com.nurbot.vllmremote.domain.usecase.RestartServiceUseCase
 import com.nurbot.vllmremote.domain.usecase.SaveServerUrlUseCase
@@ -30,6 +31,7 @@ private const val POLL_INTERVAL_MS = 5_000L
 class DashboardViewModel(
     private val getStatus: GetStatusUseCase,
     private val getModels: GetModelsUseCase,
+    private val getServiceStatus: GetServiceStatusUseCase,
     private val startService: StartServiceUseCase,
     private val stopService: StopServiceUseCase,
     private val restartService: RestartServiceUseCase,
@@ -140,6 +142,20 @@ class DashboardViewModel(
     fun onSwitchModel(modelId: String) = fireAndForget { switchModel(modelId) }
 
     fun onShutdown() = fireAndForget { shutdownServer() }
+
+    fun onRefreshServiceStatus(lines: Int = 120) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isServiceStatusLoading = true) }
+            try {
+                val serviceStatus = getServiceStatus(lines)
+                _uiState.update { it.copy(serviceStatus = serviceStatus) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(lastError = e.message ?: "Failed to load service status") }
+            } finally {
+                _uiState.update { it.copy(isServiceStatusLoading = false) }
+            }
+        }
+    }
 
     fun consumeError() {
         _uiState.update { it.copy(lastError = null) }

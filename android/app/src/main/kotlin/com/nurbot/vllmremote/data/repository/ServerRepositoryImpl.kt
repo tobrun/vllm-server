@@ -3,6 +3,7 @@ package com.nurbot.vllmremote.data.repository
 import com.nurbot.vllmremote.data.remote.VllmApi
 import com.nurbot.vllmremote.data.remote.dto.toDomain
 import com.nurbot.vllmremote.domain.model.Model
+import com.nurbot.vllmremote.domain.model.ServiceStatusDetails
 import com.nurbot.vllmremote.domain.model.ServerStatus
 import com.nurbot.vllmremote.domain.repository.PreferencesRepository
 import com.nurbot.vllmremote.domain.repository.ServerRepository
@@ -21,6 +22,9 @@ class ServerRepositoryImpl(
 
     override suspend fun getModels(): List<Model> =
         api.getModels(requireUrl()).models.map { it.toDomain() }
+
+    override suspend fun getServiceStatus(lines: Int): ServiceStatusDetails =
+        api.getServiceStatus(requireUrl(), lines).toDomain()
 
     override suspend fun start() = api.start(requireUrl())
 

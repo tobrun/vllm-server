@@ -1,6 +1,7 @@
 package com.nurbot.vllmremote.data.remote
 
 import com.nurbot.vllmremote.data.remote.dto.ModelsResponseDto
+import com.nurbot.vllmremote.data.remote.dto.ServiceStatusResponseDto
 import com.nurbot.vllmremote.data.remote.dto.StatusResponseDto
 import com.nurbot.vllmremote.data.remote.dto.SwitchRequestDto
 import io.ktor.client.HttpClient
@@ -18,6 +19,9 @@ class VllmApi(private val client: HttpClient) {
 
     suspend fun getModels(baseUrl: String): ModelsResponseDto =
         client.get("$baseUrl/models").body()
+
+    suspend fun getServiceStatus(baseUrl: String, lines: Int = 120): ServiceStatusResponseDto =
+        client.get("$baseUrl/service/status?lines=$lines").body()
 
     suspend fun start(baseUrl: String) {
         client.post("$baseUrl/start")

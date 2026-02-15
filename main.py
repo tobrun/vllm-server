@@ -3,6 +3,7 @@ import json
 import logging
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -26,6 +27,9 @@ VLLM_SERVICE = "vllm.service"
 VLLM_HEALTH_URL = "http://localhost:8000/health"
 HEALTH_POLL_INTERVAL = 5
 HEALTH_POLL_TIMEOUT = 900  # 15 minutes
+HEALTH_REQUEST_TIMEOUT = 3
+SERVICE_LOG_DEFAULT_LINES = 120
+SERVICE_LOG_MAX_LINES = 500
 SHUTDOWN_DELAY = 10
 
 
@@ -33,11 +37,25 @@ class SwitchRequest(BaseModel):
     model: str
 
 
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 class AppState:
     def __init__(self):
         self.state: str = "stopped"
         self.current_model: Optional[str] = None
         self.error_message: Optional[str] = None
+        self.last_state_change_at: str = utc_now_iso()
+        self.last_reconciled_at: Optional[str] = None
+        self.last_health_http_code: Optional[int] = None
+        self.last_health_error: Optional[str] = None
+        self.last_systemd_active_state: Optional[str] = None
+        self.last_systemd_sub_state: Optional[str] = None
+        self.last_systemd_result: Optional[str] = None
+        self.last_systemd_exec_main_status: Optional[str] = None
+        self.last_inferred_state: Optional[str] = None
+        self.last_inference_reason: Optional[str] = None
         self._state_lock = asyncio.Lock()
 
     async def set_state(self, state: str, model: Optional[str] = None, error: Optional[str] = None):
@@ -46,7 +64,27 @@ class AppState:
             if model is not None:
                 self.current_model = model
             self.error_message = error
+            self.last_state_change_at = utc_now_iso()
             logger.info(f"State transition: {state}, model={self.current_model}, error={error}")
+
+    async def update_runtime_checks(
+        self,
+        systemd_props: dict,
+        health_http_code: Optional[int],
+        health_error: Optional[str],
+        inferred_state: str,
+        inference_reason: Optional[str],
+    ):
+        async with self._state_lock:
+            self.last_reconciled_at = utc_now_iso()
+            self.last_health_http_code = health_http_code
+            self.last_health_error = health_error
+            self.last_systemd_active_state = systemd_props.get("active_state")
+            self.last_systemd_sub_state = systemd_props.get("sub_state")
+            self.last_systemd_result = systemd_props.get("result")
+            self.last_systemd_exec_main_status = systemd_props.get("exec_main_status")
+            self.last_inferred_state = inferred_state
+            self.last_inference_reason = inference_reason
 
 
 app_state = AppState()
@@ -86,12 +124,92 @@ def run_systemctl(action: str) -> tuple[int, str, str]:
 
 
 def get_systemd_state() -> str:
-    result = subprocess.run(
-        ["systemctl", "is-active", VLLM_SERVICE],
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout.strip()
+    return get_systemd_properties().get("active_state", "unknown")
+
+
+def get_systemd_properties() -> dict:
+    defaults = {
+        "active_state": "unknown",
+        "sub_state": "unknown",
+        "result": "unknown",
+        "exec_main_status": None,
+        "exec_main_code": None,
+    }
+    try:
+        result = subprocess.run(
+            [
+                "systemctl",
+                "show",
+                VLLM_SERVICE,
+                "--property=ActiveState,SubState,Result,ExecMainStatus,ExecMainCode",
+                "--no-pager",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            logger.warning(f"Failed to query systemd state: {result.stderr.strip()}")
+            return defaults
+
+        props = defaults.copy()
+        for line in result.stdout.splitlines():
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            value = value.strip() or None
+            if key == "ActiveState":
+                props["active_state"] = value or "unknown"
+            elif key == "SubState":
+                props["sub_state"] = value or "unknown"
+            elif key == "Result":
+                props["result"] = value or "unknown"
+            elif key == "ExecMainStatus":
+                props["exec_main_status"] = value
+            elif key == "ExecMainCode":
+                props["exec_main_code"] = value
+        return props
+    except Exception as e:
+        logger.warning(f"Failed to read systemd properties: {e}")
+        return defaults
+
+
+def get_service_output(lines: int = SERVICE_LOG_DEFAULT_LINES) -> dict:
+    safe_lines = max(1, min(lines, SERVICE_LOG_MAX_LINES))
+
+    try:
+        status_result = subprocess.run(
+            ["systemctl", "status", VLLM_SERVICE, "--no-pager", "-n", str(safe_lines)],
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+        status_output = status_result.stdout.strip() or status_result.stderr.strip()
+        if not status_output:
+            status_output = "No status output available"
+    except Exception as e:
+        status_output = f"Failed to read systemctl status: {e}"
+
+    try:
+        journal_result = subprocess.run(
+            ["journalctl", "-u", VLLM_SERVICE, "--no-pager", "-n", str(safe_lines)],
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+        journal_output = journal_result.stdout.strip() or journal_result.stderr.strip()
+        if not journal_output:
+            journal_output = "No journal output available"
+    except Exception as e:
+        journal_output = f"Failed to read journalctl output: {e}"
+
+    return {
+        "service": VLLM_SERVICE,
+        "lines": safe_lines,
+        "systemctl_status_output": status_output,
+        "journal_output": journal_output,
+        "generated_at": utc_now_iso(),
+    }
 
 
 def update_vllm_env(script_path: str):
@@ -211,28 +329,126 @@ async def match_vllm_model_to_config(vllm_model_id: str) -> Optional[str]:
 
 
 async def check_vllm_health() -> bool:
+    ok, _, _ = await check_vllm_health_details()
+    return ok
+
+
+async def check_vllm_health_details() -> tuple[bool, Optional[int], Optional[str]]:
     try:
         proc = await asyncio.create_subprocess_exec(
-            "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", VLLM_HEALTH_URL,
+            "curl", "-s", "-m", str(HEALTH_REQUEST_TIMEOUT), "-o", "/dev/null", "-w", "%{http_code}", VLLM_HEALTH_URL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, _ = await proc.communicate()
-        return stdout.decode().strip() == "200"
-    except Exception:
-        return False
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            err = stderr.decode().strip() or f"curl exited with status {proc.returncode}"
+            return False, None, err
+        raw_code = stdout.decode().strip()
+        code = int(raw_code) if raw_code.isdigit() else None
+        return code == 200, code, None if code == 200 else f"Health returned HTTP {raw_code}"
+    except Exception as e:
+        return False, None, str(e)
+
+
+def build_service_failure_message(systemd_props: dict) -> str:
+    result = systemd_props.get("result")
+    exit_status = systemd_props.get("exec_main_status")
+    details = []
+    if result and result != "unknown":
+        details.append(f"result={result}")
+    if exit_status:
+        details.append(f"exec_main_status={exit_status}")
+    suffix = f" ({', '.join(details)})" if details else ""
+    return f"vLLM systemd service is failed{suffix}"
+
+
+def infer_state(systemd_props: dict, manager_state: str, health_ok: bool, health_error: Optional[str]) -> tuple[str, Optional[str]]:
+    active_state = systemd_props.get("active_state")
+
+    if active_state == "active":
+        if health_ok:
+            return "running", None
+        if manager_state == "starting":
+            return "starting", "vLLM process is active but health endpoint is not ready yet"
+        return "error", f"vLLM service is active but health endpoint is unreachable: {health_error or 'unknown error'}"
+
+    if active_state == "activating":
+        return "starting", None
+
+    if active_state == "deactivating":
+        return "stopping", None
+
+    if active_state == "failed":
+        return "error", build_service_failure_message(systemd_props)
+
+    if active_state == "inactive":
+        if manager_state == "stopping":
+            return "stopped", None
+        return "stopped", None
+
+    return manager_state, "Unable to determine vLLM service state from systemd"
+
+
+async def reconcile_runtime_state(update_app_state: bool = True) -> dict:
+    systemd_props = get_systemd_properties()
+    health_ok, health_http_code, health_error = await check_vllm_health_details()
+    inferred_state, reason = infer_state(systemd_props, app_state.state, health_ok, health_error)
+
+    await app_state.update_runtime_checks(
+        systemd_props=systemd_props,
+        health_http_code=health_http_code,
+        health_error=health_error,
+        inferred_state=inferred_state,
+        inference_reason=reason,
+    )
+
+    if update_app_state:
+        if inferred_state == "error":
+            if app_state.state != "error" or app_state.error_message != reason:
+                await app_state.set_state("error", error=reason)
+        elif inferred_state != app_state.state:
+            await app_state.set_state(inferred_state)
+        elif app_state.state != "error":
+            app_state.error_message = None
+
+    return {
+        "systemd": {
+            "service": VLLM_SERVICE,
+            "active_state": systemd_props.get("active_state"),
+            "sub_state": systemd_props.get("sub_state"),
+            "result": systemd_props.get("result"),
+            "exec_main_status": systemd_props.get("exec_main_status"),
+            "exec_main_code": systemd_props.get("exec_main_code"),
+        },
+        "health": {
+            "url": VLLM_HEALTH_URL,
+            "ok": health_ok,
+            "http_code": health_http_code,
+            "error": health_error,
+        },
+        "inferred_state": inferred_state,
+        "inference_reason": reason,
+        "checked_at": app_state.last_reconciled_at,
+    }
 
 
 async def wait_for_vllm_ready():
     """Poll vLLM health endpoint until ready or timeout."""
     elapsed = 0
     while elapsed < HEALTH_POLL_TIMEOUT:
-        if await check_vllm_health():
-            return True
+        systemd_props = get_systemd_properties()
+        if systemd_props.get("active_state") == "failed":
+            return False, build_service_failure_message(systemd_props)
+
+        health_ok, _, health_error = await check_vllm_health_details()
+        if health_ok:
+            return True, None
+
         await asyncio.sleep(HEALTH_POLL_INTERVAL)
         elapsed += HEALTH_POLL_INTERVAL
-        logger.info(f"Waiting for vLLM to be ready... ({elapsed}s)")
-    return False
+        logger.info(f"Waiting for vLLM to be ready... ({elapsed}s), health_error={health_error}")
+    return False, "vLLM health check timeout"
 
 
 async def start_vllm_async(model_id: str, script_path: str):
@@ -248,11 +464,12 @@ async def start_vllm_async(model_id: str, script_path: str):
             await app_state.set_state("error", error=f"Failed to start vLLM: {stderr}")
             return
 
-        if await wait_for_vllm_ready():
+        ready, failure_reason = await wait_for_vllm_ready()
+        if ready:
             await app_state.set_state("running")
             save_state({"last_model": model_id})
         else:
-            await app_state.set_state("error", error="vLLM health check timeout")
+            await app_state.set_state("error", error=failure_reason or "vLLM failed to become ready")
     except Exception as e:
         await app_state.set_state("error", error=str(e))
 
@@ -275,36 +492,27 @@ async def startup_event():
     """Auto-start vLLM with the last-selected model on backend startup."""
     logger.info("vLLM Manager starting up...")
 
-    # Check if vLLM is already running
-    systemd_state = get_systemd_state()
-    if systemd_state == "active":
-        state = load_state()
-        model_id = state.get("last_model")
+    state = load_state()
+    app_state.current_model = state.get("last_model")
 
-        # If state.json doesn't know the model, ask vLLM directly
-        if not model_id:
+    diagnostics = await reconcile_runtime_state(update_app_state=True)
+    inferred_state = diagnostics["inferred_state"]
+    if inferred_state in ("running", "starting", "stopping", "error"):
+        logger.info(f"Startup reconciliation detected state={inferred_state}")
+
+        if inferred_state == "running" and not app_state.current_model:
             vllm_model = await detect_running_model()
             if vllm_model:
                 logger.info(f"Detected running vLLM model: {vllm_model}")
                 model_id = await match_vllm_model_to_config(vllm_model)
                 if model_id:
-                    logger.info(f"Matched to config model: {model_id}")
+                    app_state.current_model = model_id
                     save_state({"last_model": model_id})
                 else:
-                    # Use vLLM's model ID directly as a fallback
-                    model_id = vllm_model.split("/")[-1]
-                    logger.info(f"No config match, using vLLM model name: {model_id}")
-
-        if model_id:
-            await app_state.set_state("running", model=model_id)
-        else:
-            # Force set current_model even if None, so state is "running"
-            app_state.state = "running"
-        logger.info(f"vLLM already running with model: {model_id}")
+                    app_state.current_model = vllm_model.split("/")[-1]
         return
 
     # Load last model and auto-start
-    state = load_state()
     model_id = state.get("last_model")
 
     if not model_id:
@@ -329,16 +537,27 @@ async def startup_event():
 
 @app.get("/status")
 async def get_status():
+    diagnostics = await reconcile_runtime_state(update_app_state=True)
     gpu = get_gpu_stats()
     response = {
         "state": app_state.state,
         "model": app_state.current_model,
+        "last_state_change_at": app_state.last_state_change_at,
+        "checks": diagnostics,
     }
     if app_state.error_message:
         response["error"] = app_state.error_message
     if gpu:
         response["gpu"] = gpu
     return response
+
+
+@app.get("/service/status")
+async def get_service_status(lines: int = SERVICE_LOG_DEFAULT_LINES):
+    diagnostics = await reconcile_runtime_state(update_app_state=False)
+    service_output = get_service_output(lines=lines)
+    service_output["checks"] = diagnostics
+    return service_output
 
 
 @app.get("/models")

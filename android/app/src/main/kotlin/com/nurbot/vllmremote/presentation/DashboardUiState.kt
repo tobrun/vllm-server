@@ -1,6 +1,7 @@
 package com.nurbot.vllmremote.presentation
 
 import com.nurbot.vllmremote.domain.model.Model
+import com.nurbot.vllmremote.domain.model.ServiceStatusDetails
 import com.nurbot.vllmremote.domain.model.ServerStatus
 
 data class DashboardUiState(
@@ -9,6 +10,8 @@ data class DashboardUiState(
     val models: List<Model> = emptyList(),
     val isReachable: Boolean = true,
     val isLoading: Boolean = false,
+    val isServiceStatusLoading: Boolean = false,
+    val serviceStatus: ServiceStatusDetails? = null,
     val startingElapsedMs: Long? = null,
     val lastError: String? = null,
 )

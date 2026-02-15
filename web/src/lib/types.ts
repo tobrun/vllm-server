@@ -31,6 +31,14 @@ export interface ModelsResponse {
   models: Model[];
 }
 
+export interface ServiceStatusResponse {
+  service: string;
+  lines: number;
+  systemctl_status_output: string;
+  journal_output: string;
+  generated_at: string;
+}
+
 export const stateLabel: Record<ServerState, string> = {
   running: "Running",
   stopped: "Stopped",

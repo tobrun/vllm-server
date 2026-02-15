@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { ServerStatus, Model } from "@/lib/types";
+import { ServerStatus, Model, ServiceStatusResponse } from "@/lib/types";
 
 const POLL_INTERVAL = 5000;
 const URL_STORAGE_KEY = "vllm_server_url";
@@ -17,6 +17,9 @@ export interface ServerState {
   transitionStartMs: number | null;
   lastError: string | null;
   modelUsage: Record<string, number>;
+  serviceStatus: ServiceStatusResponse | null;
+  serviceStatusLoading: boolean;
+  loadServiceStatus: (lines?: number) => Promise<void>;
 }
 
 export function useServer() {
@@ -28,6 +31,8 @@ export function useServer() {
   const [transitionStartMs, setTransitionStartMs] = useState<number | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
   const [modelUsage, setModelUsage] = useState<Record<string, number>>({});
+  const [serviceStatus, setServiceStatus] = useState<ServiceStatusResponse | null>(null);
+  const [serviceStatusLoading, setServiceStatusLoading] = useState(false);
   const prevStateRef = useRef<string | null>(null);
 
   // Load server URL and model usage from localStorage on mount
@@ -139,6 +144,19 @@ export function useServer() {
     [serverUrl, fireAction],
   );
 
+  const loadServiceStatus = useCallback(async (lines = 120) => {
+    if (!serverUrl) return;
+    setServiceStatusLoading(true);
+    try {
+      const payload = await api.getServiceStatus(serverUrl, lines);
+      setServiceStatus(payload);
+    } catch (e) {
+      setLastError(`Service status failed: ${e instanceof Error ? e.message : "Unknown error"}`);
+    } finally {
+      setServiceStatusLoading(false);
+    }
+  }, [serverUrl]);
+
   const clearError = useCallback(() => setLastError(null), []);
 
   return {
@@ -152,10 +170,13 @@ export function useServer() {
     lastError,
     clearError,
     modelUsage,
+    serviceStatus,
+    serviceStatusLoading,
     start,
     stop,
     restart,
     switchModel,
     shutdown,
+    loadServiceStatus,
   };
 }
