@@ -1,17 +1,23 @@
 import { ServerStatus, ModelsResponse, ServiceStatusResponse } from "./types";
 
 async function request<T>(baseUrl: string, path: string, method = "GET", body?: unknown): Promise<T> {
-  const url = `${baseUrl.replace(/\/+$/, "")}${path}`;
-  const res = await fetch(url, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
+  const res = await fetch("/api/vllm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      baseUrl,
+      path,
+      method,
+      body,
+    }),
   });
+
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
     throw new Error(text || `HTTP ${res.status}`);
   }
-  return res.json();
+
+  return (await res.json()) as T;
 }
 
 export const api = {
